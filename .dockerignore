@@ -10,3 +10,5 @@ __pycache__
 docs/
 tests/
 *.md
+venv/
+.venv/

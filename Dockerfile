@@ -4,7 +4,7 @@
 # Chromium + all OS-level dependencies pre-installed. This eliminates the
 # `playwright install chromium --with-deps` step — previously the slowest
 # layer (~20 min on Apple Silicon via QEMU emulation for linux/amd64).
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.60.0-jammy
 
 WORKDIR /app
 

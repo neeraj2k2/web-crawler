@@ -73,7 +73,10 @@ async def lifespan(app: FastAPI):
 
     logger.info("Launching Playwright Chromium browser")
     playwright = await async_playwright().start()
-    app.state.browser = await playwright.chromium.launch(headless=True)
+    app.state.browser = await playwright.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+    )
     app.state.playwright = playwright
     logger.info("Playwright browser ready")
 
