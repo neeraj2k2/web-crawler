@@ -552,18 +552,16 @@ TEST_URLS = [
 
 
 @pytest.mark.integration
-@pytest.mark.asyncio
 @pytest.mark.parametrize("url,expected_type,xfail_reason", TEST_URLS)
-async def test_crawl_live_url(url, expected_type, xfail_reason):
+def test_crawl_live_url(api_client, url, expected_type, xfail_reason):
     if xfail_reason:
         pytest.xfail(xfail_reason)
 
-    import httpx
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.post(
-            "http://localhost:8080/crawl",
-            json={"url": url, "respect_robots_txt": False},
-        )
+    response = api_client.post(
+        "/crawl",
+        json={"url": url, "respect_robots_txt": False},
+        timeout=120,
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
