@@ -22,8 +22,6 @@ async def resolve_redirect(url: str, client: httpx.AsyncClient) -> tuple[str, in
         initial_status = initial.status_code
 
         if not initial.is_redirect:
-            # No redirect — final URL is the same
-            logger.info("No redirect for %s (HTTP %d)", url, initial_status)
             return str(initial.url), initial_status
 
         # Step 2: follow the full chain to get the true final URL.
@@ -33,21 +31,16 @@ async def resolve_redirect(url: str, client: httpx.AsyncClient) -> tuple[str, in
             final = await client.get(url, follow_redirects=True, timeout=5.0)
             final_url = str(final.url)
             if final_url != url:
-                logger.info("Redirect chain resolved: %s → %s (initial HTTP %d)",
-                            url, final_url, initial_status)
+                logger.debug("Redirected: %s → %s", url, final_url)
             return final_url, initial_status
         except Exception as follow_exc:
-            # Following failed (timeout, HTTP/2 error, etc.) — return the first-hop
-            # location from the initial 301 response and preserve the status code.
             location = (
                 str(initial.next_request.url)
                 if initial.next_request
                 else initial.headers.get("location", url)
             )
-            logger.warning(
-                "Redirect follow failed for %s (%s: %s) — using first-hop location %s",
-                url, type(follow_exc).__name__, follow_exc, location,
-            )
+            logger.warning("Redirect follow failed (%s: %s) — using first-hop %s",
+                           type(follow_exc).__name__, follow_exc, location)
             return location or url, initial_status
 
     except Exception as e:

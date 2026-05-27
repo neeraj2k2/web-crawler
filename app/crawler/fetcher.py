@@ -36,18 +36,16 @@ async def fetch(url: str, browser: Browser, client: httpx.AsyncClient) -> tuple[
     Returns (html, fetcher_used, http_status_code).
     Raises UnsupportedContentTypeError, HttpError, or FetchError.
     """
-    logger.info("Fetching URL: %s", url)
+    logger.debug("Fetching: %s", url)
 
     html, status_code = await _try_static(url, client)
 
     if html is not None:
-        logger.info("Static fetch succeeded (%d chars) — running Playwright detection heuristic", len(html))
         if not _needs_playwright(html, url):
-            logger.info("Heuristic: static HTML looks complete — using httpx result")
             return html, "httpx", status_code
-        logger.info("Heuristic: JS rendering detected — falling back to Playwright")
+        logger.debug("JS rendering detected — falling back to Playwright")
     else:
-        logger.info("Static fetch returned no usable HTML — falling back to Playwright")
+        logger.debug("httpx returned no usable HTML — falling back to Playwright")
 
     html, status_code = await _fetch_playwright(url, browser)
     return html, "playwright", status_code
@@ -66,17 +64,17 @@ async def _try_static(url: str, client: httpx.AsyncClient) -> tuple[Optional[str
             # robots.txt check). _abck with ~-1~ signals an unresolved JS challenge —
             # sending it tells Akamai definitively that we are not a browser.
             client.cookies.clear()
-            logger.info("httpx attempt %d/%d: %s", attempt, settings.max_attempts, url)
+            logger.debug("httpx attempt %d/%d: %s", attempt, settings.max_attempts, url)
             response = await client.get(url)
 
             if response.history:
-                logger.info("Redirect chain: %s",
-                            " → ".join(str(r.url) for r in response.history) + f" → {response.url}")
+                logger.debug("Redirect chain: %s",
+                             " → ".join(str(r.url) for r in response.history) + f" → {response.url}")
 
-            logger.info("httpx response: HTTP %d, Content-Type: %s, final URL: %s",
-                        response.status_code,
-                        response.headers.get("content-type", "unknown"),
-                        response.url)
+            logger.debug("HTTP %d | %s | %s",
+                         response.status_code,
+                         response.headers.get("content-type", "unknown"),
+                         response.url)
 
             content_type = response.headers.get("content-type", "")
             if "text/html" not in content_type:
@@ -107,10 +105,7 @@ async def _try_static(url: str, client: httpx.AsyncClient) -> tuple[Optional[str
                                attempt, settings.max_attempts, type(e).__name__, e, settings.retry_delay)
                 await asyncio.sleep(settings.retry_delay)
             else:
-                logger.warning("httpx all %d attempts failed (%s: %s) — falling back to Playwright",
-                               settings.max_attempts, type(e).__name__, e)
-                logger.warning("Note: ReadTimeout from a datacenter IP often means the target server "
-                               "uses IP-reputation blocking (Akamai, Cloudflare). Residential proxies required.")
+                logger.warning("httpx failed after %d attempts (%s: %s)", settings.max_attempts, type(e).__name__, e)
                 return None, None
 
     return None, None
@@ -127,37 +122,27 @@ async def _fetch_playwright(url: str, browser: Browser) -> tuple[str, int]:
         page = await browser.new_page(user_agent=settings.user_agent)
         try:
             await _stealth.apply_stealth_async(page)
-            logger.info("Playwright attempt %d/%d: %s (timeout=%ds)",
-                        attempt, settings.max_attempts, url, settings.playwright_timeout)
+            logger.debug("Playwright attempt %d/%d: %s", attempt, settings.max_attempts, url)
             response = await page.goto(
                 url,
                 timeout=settings.playwright_timeout * 1000,
                 wait_until="domcontentloaded",
             )
             status_code = response.status if response else 200
-            logger.info("Playwright page status: HTTP %d", status_code)
             await page.wait_for_timeout(2500)
             html = await page.content()
-            logger.info("Playwright fetch succeeded (%d chars)", len(html))
-            logger.debug("HTML preview (first 500 chars):\n%s", html[:500])
+            logger.debug("Playwright got %d chars (HTTP %d)", len(html), status_code)
             return html, status_code
         except Exception as e:
             last_exc = e
-            err_str = str(e)
             if attempt < settings.max_attempts:
-                logger.warning("Playwright attempt %d/%d failed (%s: %s) — retrying in %.1fs",
-                               attempt, settings.max_attempts, type(e).__name__, err_str, settings.retry_delay)
+                logger.warning("Playwright attempt %d/%d failed (%s) — retrying",
+                               attempt, settings.max_attempts, type(e).__name__)
                 await asyncio.sleep(settings.retry_delay)
             else:
-                logger.warning("Playwright all %d attempts failed (%s: %s)",
-                               settings.max_attempts, type(e).__name__, err_str)
-                if "ERR_HTTP2_PROTOCOL_ERROR" in err_str or "ERR_CONNECTION_REFUSED" in err_str:
-                    logger.warning("ERR_HTTP2_PROTOCOL_ERROR often means the server is closing the "
-                                   "connection at the TLS level — typically IP-reputation blocking on "
-                                   "datacenter IPs. Not fixable via headers alone.")
+                logger.warning("Playwright failed after %d attempts: %s", settings.max_attempts, e)
         finally:
             await page.close()
-            logger.info("Playwright page closed (attempt %d)", attempt)
 
     raise FetchError(f"All fetch strategies failed for {url}: {last_exc}") from last_exc
 
@@ -173,34 +158,34 @@ def _needs_playwright(html: str, url: str) -> bool:
     body = soup.find("body")
     visible_text = body.get_text(strip=True) if body else ""
     if len(visible_text) < settings.js_detection_text_threshold:
-        logger.info("Heuristic trigger: visible text too short (%d chars < threshold %d)",
+        logger.debug("Heuristic trigger: visible text too short (%d chars < threshold %d)",
                     len(visible_text), settings.js_detection_text_threshold)
         return True
 
     # 2. SPA framework fingerprints present before JS executes
     if soup.find("div", id="root"):
-        logger.info("Heuristic trigger: <div id='root'> found (React)")
+        logger.debug("Heuristic trigger: <div id='root'> found (React)")
         return True
     if soup.find("div", id="app"):
-        logger.info("Heuristic trigger: <div id='app'> found (Vue/SPA)")
+        logger.debug("Heuristic trigger: <div id='app'> found (Vue/SPA)")
         return True
     if soup.find(attrs={"data-reactroot": True}):
-        logger.info("Heuristic trigger: data-reactroot attribute found")
+        logger.debug("Heuristic trigger: data-reactroot attribute found")
         return True
     if "__NEXT_DATA__" in html:
-        logger.info("Heuristic trigger: __NEXT_DATA__ found (Next.js)")
+        logger.debug("Heuristic trigger: __NEXT_DATA__ found (Next.js)")
         return True
     if "ng-version" in html:
-        logger.info("Heuristic trigger: ng-version found (Angular)")
+        logger.debug("Heuristic trigger: ng-version found (Angular)")
         return True
     if "window.__nuxt__" in html:
-        logger.info("Heuristic trigger: window.__nuxt__ found (Nuxt.js)")
+        logger.debug("Heuristic trigger: window.__nuxt__ found (Nuxt.js)")
         return True
 
     # 3. <noscript> with substantial content — only meaningful if visible text is also short
     noscript = soup.find("noscript")
     if noscript and len(noscript.get_text(strip=True)) > 50 and len(visible_text) < settings.js_detection_text_threshold:
-        logger.info("Heuristic trigger: <noscript> has content (%d chars) and visible text is short (%d chars)",
+        logger.debug("Heuristic trigger: <noscript> has content (%d chars) and visible text is short (%d chars)",
                     len(noscript.get_text(strip=True)), len(visible_text))
         return True
 
@@ -208,21 +193,21 @@ def _needs_playwright(html: str, url: str) -> bool:
     html_lower = html.lower()
     for phrase in ["enable javascript", "javascript is required", "javascript must be enabled"]:
         if phrase in html_lower:
-            logger.info("Heuristic trigger: JS requirement string found ('%s')", phrase)
+            logger.debug("Heuristic trigger: JS requirement string found ('%s')", phrase)
             return True
 
     # 5. Title missing or matches bare domain name (content hasn't loaded)
     title_tag = soup.find("title")
     if not title_tag or not title_tag.get_text(strip=True):
-        logger.info("Heuristic trigger: <title> is missing or empty")
+        logger.debug("Heuristic trigger: <title> is missing or empty")
         return True
 
     hostname = urlparse(url).hostname or ""
     domain = hostname.replace("www.", "")
     title_text = title_tag.get_text(strip=True).lower()
     if title_text in (domain, hostname):
-        logger.info("Heuristic trigger: title matches bare domain ('%s')", title_text)
+        logger.debug("Heuristic trigger: title matches bare domain ('%s')", title_text)
         return True
 
-    logger.info("Heuristic: no JS signals detected — static HTML is usable")
+    logger.debug("Heuristic: no JS signals — static HTML usable")
     return False

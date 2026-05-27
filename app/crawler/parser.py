@@ -11,25 +11,14 @@ logger = logging.getLogger("app.crawler.parser")
 
 def parse(html: str, url: str) -> dict:
     """Returns {'metadata': {...}, 'content': {...}, 'extracted_text': str|None}."""
-    logger.info("Parsing HTML (%d chars) for %s", len(html), url)
     soup = BeautifulSoup(html, "lxml")
     structured = _extract_structured_data(html, url)
     metadata = _extract_metadata(soup, url, structured)
     content = _extract_content(soup, html, base_url=url, schema_type=structured.get("schema_type"))
-
-    logger.info("── Metadata output ──────────────────────────")
-    for key, value in metadata.items():
-        logger.info("  %-20s: %s", key, repr(value) if not isinstance(value, list) else value)
-    logger.info("── Content output ───────────────────────────")
-    logger.info("  h1           : %s", content["h1"])
-    logger.info("  h2           : %s", content["h2"][:5])
-    logger.info("  h3           : %s", content["h3"][:5])
-    logger.info("  word_count   : %d", content["word_count"])
-    logger.info("  body preview : %s", repr(content["body_text_preview"]))
     extracted_text = content.pop("extracted_text", None)
-    logger.info("  extracted_text (%d chars): %s",
-                len(extracted_text) if extracted_text else 0,
-                repr(extracted_text[:300]) if extracted_text else None)
+    logger.debug("Parsed: title=%r | word_count=%d | extracted=%d chars",
+                 metadata.get("title"), content["word_count"],
+                 len(extracted_text) if extracted_text else 0)
 
     return {"metadata": metadata, "content": content, "extracted_text": extracted_text, "soup": soup}
 
@@ -56,8 +45,8 @@ def _extract_metadata(soup: BeautifulSoup, url: str, structured: dict) -> dict:
     html_tag = soup.find("html")
     lang = html_tag.get("lang") if html_tag else None
 
-    logger.info("og:title=%r | og:image=%r | canonical=%r | keywords count=%d",
-                meta_prop("og:title"), meta_prop("og:image"), canonical_url, len(keywords))
+    logger.debug("og:title=%r | canonical=%r | keywords=%d",
+                 meta_prop("og:title"), canonical_url, len(keywords))
 
     return {
         "title": title,
@@ -99,9 +88,7 @@ def _extract_content(soup: BeautifulSoup, raw_html: str, base_url: str = "", sch
         include_tables=include_tables,
         no_fallback=False,
     )
-    logger.info("trafilatura include_tables=%s", include_tables)
-    logger.info("Trafilatura extracted: %s chars", len(extracted) if extracted else 0)
-    logger.info("Body text extracted: %d chars | h1=%s", len(body_text), h1[:1])
+    logger.debug("trafilatura: %d chars (include_tables=%s)", len(extracted) if extracted else 0, include_tables)
 
     # Use trafilatura output for both the preview and word count — it's clean
     # main-content text. Raw body text inflates both with navigation and UI noise.
@@ -217,8 +204,7 @@ def _extract_links(html: str, base_url: str, max_per_category: int = 50) -> dict
             if len(external) < max_per_category:
                 external.append(normalised)
 
-    logger.info("Links extracted — internal: %d total (%d returned), external: %d total (%d returned)",
-                internal_total, len(internal), external_total, len(external))
+    logger.debug("Links: %d internal, %d external", internal_total, external_total)
 
     return {
         "internal": internal,
@@ -229,7 +215,6 @@ def _extract_links(html: str, base_url: str, max_per_category: int = 50) -> dict
 
 
 def _extract_structured_data(html: str, url: str) -> dict:
-    logger.info("Extracting structured data (JSON-LD / microdata)")
     try:
         data = extruct.extract(
             html,
@@ -238,27 +223,22 @@ def _extract_structured_data(html: str, url: str) -> dict:
             uniform=True,
         )
 
-        json_ld_count = len(data.get("json-ld", []))
-        microdata_count = len(data.get("microdata", []))
-        logger.info("extruct found %d JSON-LD and %d microdata items", json_ld_count, microdata_count)
-
         for item in data.get("json-ld", []):
             schema_type = item.get("@type")
             if schema_type:
                 if isinstance(schema_type, list):
                     schema_type = schema_type[0]
-                logger.info("Schema type from JSON-LD: %r", schema_type)
+                logger.debug("Schema type from JSON-LD: %r", schema_type)
                 return {"schema_type": schema_type}
 
         for item in data.get("microdata", []):
             raw_type = item.get("@type", "")
             if raw_type:
                 schema_type = raw_type.rstrip("/").split("/")[-1]
-                logger.info("Schema type from microdata: %r", schema_type)
+                logger.debug("Schema type from microdata: %r", schema_type)
                 return {"schema_type": schema_type}
 
     except Exception as e:
         logger.warning("extruct failed: %s — continuing without structured data", e)
 
-    logger.info("No schema type found in structured data")
     return {}
