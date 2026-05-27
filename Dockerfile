@@ -21,8 +21,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Bake models into the image at build time — avoids cold-start downloads.
 # Separate layers so each model is cached independently.
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-RUN python -m spacy download en_core_web_sm
-
 # App code — changes most often, placed last so all above layers stay cached
 COPY app/ ./app/
 

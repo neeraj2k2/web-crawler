@@ -55,24 +55,51 @@ def extract_topics(
     logger.info("%s", combined[:500])
     logger.info("────────────────────────────────────────────")
 
-    keywords = model.extract_keywords(
+    combined_lower = combined.lower()
+
+    # Pass 1: single words — always genuine, no verbatim check needed
+    single_keywords = model.extract_keywords(
         combined,
-        keyphrase_ngram_range=(1, 2),
+        keyphrase_ngram_range=(1, 1),
+        stop_words="english",
+        top_n=5,
+        use_mmr=True,
+        diversity=0.4,
+    )
+
+    # Pass 2: bigrams — must appear verbatim to exclude stop-word-bridged
+    # artifacts like "friend hike" (from "friend to hike") and cross-sentence
+    # pairs like "industry google" (from "tech industry. Google found...")
+    bigram_keywords = model.extract_keywords(
+        combined,
+        keyphrase_ngram_range=(2, 2),
         stop_words="english",
         top_n=top_k,
         use_mmr=True,
         diversity=0.3,
     )
 
-    logger.info("── KeyBERT output ───────────────────────────")
-    for phrase, score in keywords:
-        logger.info("  %-40s score: %.4f", phrase, score)
+    logger.info("── KeyBERT single words ─────────────────────")
+    for phrase, score in single_keywords:
+        logger.info("  %-30s score: %.4f", phrase, score)
+    logger.info("── KeyBERT bigrams ──────────────────────────")
+    for phrase, score in bigram_keywords:
+        logger.info("  %-30s score: %.4f", phrase, score)
     logger.info("────────────────────────────────────────────")
 
-    topics = [kw for kw, score in keywords if score >= min_score]
-    filtered = len(keywords) - len(topics)
-    if filtered:
-        logger.info("Score filter (min=%.2f): dropped %d low-scoring topics", min_score, filtered)
+    seen = set()
+    topics = []
+
+    for kw, score in single_keywords:
+        if score >= min_score and kw not in seen:
+            seen.add(kw)
+            topics.append(kw)
+
+    for kw, score in bigram_keywords:
+        if score >= min_score and kw not in seen and kw.lower() in combined_lower:
+            seen.add(kw)
+            topics.append(kw)
+
     logger.info("Final topics: %s", topics)
     return topics
 

@@ -455,30 +455,16 @@ class TestFetcherErrorPaths:
 # ---------------------------------------------------------------------------
 
 class TestExtractTopics:
-    def _make_mock_nlp(self, chunks: list[str]) -> MagicMock:
-        mock_chunks = []
-        for text in chunks:
-            chunk = MagicMock()
-            chunk.text = text
-            mock_chunks.append(chunk)
-        doc = MagicMock()
-        doc.noun_chunks = mock_chunks
-        nlp = MagicMock()
-        nlp.return_value = doc
-        return nlp
-
     def _make_mock_model(self, keywords: list[tuple[str, float]]) -> MagicMock:
         model = MagicMock()
         model.extract_keywords.return_value = keywords
         return model
 
-    def test_returns_topics_from_noun_chunks(self):
-        nlp = self._make_mock_nlp(["compact toaster", "shade settings", "crumb tray"])
+    def test_returns_topics(self):
         model = self._make_mock_model([("compact toaster", 0.85), ("shade settings", 0.72)])
 
         topics = extract_topics(
             model=model,
-            nlp=nlp,
             metadata={"title": "Cuisinart Compact Toaster", "description": None,
                       "og_description": None, "h1": [], "h2": []},
             content={"h1": ["Cuisinart Compact Toaster"], "h2": [], "body_text_preview": ""},
@@ -489,31 +475,11 @@ class TestExtractTopics:
         assert topics == ["compact toaster", "shade settings"]
         model.extract_keywords.assert_called_once()
 
-    def test_falls_back_to_ngrams_when_no_noun_chunks(self):
-        nlp = self._make_mock_nlp([])
-        model = self._make_mock_model([("ai jobs", 0.80)])
-
-        topics = extract_topics(
-            model=model,
-            nlp=nlp,
-            metadata={"title": "AI and Jobs", "description": None,
-                      "og_description": None, "h1": [], "h2": []},
-            content={"h1": [], "h2": [], "body_text_preview": ""},
-            extracted_text="Artificial intelligence is changing jobs.",
-            top_k=5,
-        )
-
-        assert topics == ["ai jobs"]
-        call_kwargs = model.extract_keywords.call_args
-        assert "keyphrase_ngram_range" in call_kwargs.kwargs
-
     def test_returns_empty_when_combined_text_too_short(self):
-        nlp = self._make_mock_nlp([])
         model = self._make_mock_model([])
 
         topics = extract_topics(
             model=model,
-            nlp=nlp,
             metadata={"title": "", "description": None, "og_description": None,
                       "h1": [], "h2": []},
             content={"h1": [], "h2": [], "body_text_preview": ""},
@@ -525,12 +491,10 @@ class TestExtractTopics:
         model.extract_keywords.assert_not_called()
 
     def test_uses_body_preview_when_no_extracted_text(self):
-        nlp = self._make_mock_nlp(["tech workers"])
         model = self._make_mock_model([("tech workers", 0.78)])
 
         topics = extract_topics(
             model=model,
-            nlp=nlp,
             metadata={"title": "AI at Work", "description": None,
                       "og_description": None, "h1": [], "h2": []},
             content={"h1": ["AI at Work"], "h2": [], "body_text_preview": "Tech workers use AI daily."},
@@ -542,12 +506,10 @@ class TestExtractTopics:
 
     def test_description_and_h2_never_included_in_keybert_input(self):
         """Description (meta) and h2 headings are excluded from KeyBERT input."""
-        nlp = self._make_mock_nlp(["toaster"])
         model = self._make_mock_model([("toaster", 0.80)])
 
         extract_topics(
             model=model,
-            nlp=nlp,
             metadata={
                 "title": "Cuisinart CPT-122 Toaster",
                 "description": "Online Shopping for Blenders, Juicers, Ovens and more",

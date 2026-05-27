@@ -10,8 +10,8 @@ class Settings(BaseSettings):
         "Chrome/148.0.0.0 Safari/537.36"
     )
     keybert_model: str = "all-MiniLM-L6-v2"
-    topics_top_k: int = 10
-    min_topic_score: float = 0.4
+    topics_top_k: int = 15
+    min_topic_score: float = 0.3
     js_detection_text_threshold: int = 500
     max_attempts: int = 3
     retry_delay: float = 2.0

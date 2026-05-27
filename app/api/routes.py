@@ -114,7 +114,6 @@ async def crawl(request: Request, body: CrawlRequest):
             request.app.state.executor,
             lambda: classifier.extract_topics(
                 model=request.app.state.keybert,
-                nlp=request.app.state.nlp,
                 metadata=parsed["metadata"],
                 content=parsed["content"],
                 extracted_text=parsed["extracted_text"],
@@ -151,6 +150,5 @@ async def health(request: Request):
         "status": "ok",
         "http_client_ready": getattr(request.app.state, "http_client", None) is not None,
         "model_loaded": getattr(request.app.state, "keybert", None) is not None,
-        "nlp_loaded": getattr(request.app.state, "nlp", None) is not None,
         "browser_ready": getattr(request.app.state, "browser", None) is not None,
     }

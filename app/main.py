@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import httpx
-import spacy
 from fastapi import FastAPI
 from keybert import KeyBERT
 from playwright.async_api import async_playwright
@@ -93,10 +92,6 @@ async def lifespan(app: FastAPI):
     logger.info("Loading KeyBERT model: %s", settings.keybert_model)
     app.state.keybert = KeyBERT(model=settings.keybert_model)
     logger.info("KeyBERT model loaded")
-
-    logger.info("Loading spaCy model: en_core_web_sm")
-    app.state.nlp = spacy.load("en_core_web_sm")
-    logger.info("spaCy model loaded")
 
     logger.info("Creating thread pool executor (max_workers=%d)", settings.executor_max_workers)
     app.state.executor = ThreadPoolExecutor(max_workers=settings.executor_max_workers)

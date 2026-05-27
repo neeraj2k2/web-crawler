@@ -10,7 +10,6 @@ extruct>=0.17.0,<0.18.0
 trafilatura>=1.9.0,<2.0.0
 keybert>=0.8.3,<0.9.0
 sentence-transformers>=2.7.0,<3.0.0
-spacy>=3.7.0,<4.0.0
 pydantic>=2.7.0,<3.0.0
 pydantic-settings>=2.3.0,<3.0.0
 python-dotenv>=1.0.0,<2.0.0
