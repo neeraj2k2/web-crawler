@@ -31,7 +31,12 @@ class FetchError(Exception):
     pass
 
 
-async def fetch(url: str, browser: Browser, client: httpx.AsyncClient) -> tuple[str, str, int]:
+async def fetch(
+    url: str,
+    browser: Browser,
+    client: httpx.AsyncClient,
+    semaphore: Optional[asyncio.Semaphore] = None,
+) -> tuple[str, str, int]:
     """
     Returns (html, fetcher_used, http_status_code).
     Raises UnsupportedContentTypeError, HttpError, or FetchError.
@@ -47,7 +52,7 @@ async def fetch(url: str, browser: Browser, client: httpx.AsyncClient) -> tuple[
     else:
         logger.debug("httpx returned no usable HTML — falling back to Playwright")
 
-    html, status_code = await _fetch_playwright(url, browser)
+    html, status_code = await _fetch_playwright(url, browser, semaphore)
     return html, "playwright", status_code
 
 
@@ -111,38 +116,46 @@ async def _try_static(url: str, client: httpx.AsyncClient) -> tuple[Optional[str
     return None, None
 
 
-async def _fetch_playwright(url: str, browser: Browser) -> tuple[str, int]:
+async def _fetch_playwright(
+    url: str,
+    browser: Browser,
+    semaphore: Optional[asyncio.Semaphore] = None,
+) -> tuple[str, int]:
     """
     Makes up to settings.max_attempts total attempts on transient Playwright failures.
-    Each attempt gets a fresh page to avoid stale state.
+    Each attempt gets a fresh page to avoid stale state. The semaphore caps how many
+    Playwright renders run concurrently — held for the full retry loop so a single
+    request doesn't release the slot mid-flight and let another in during the retry delay.
     """
     last_exc: Exception = FetchError(f"Playwright failed for {url}")
+    _sem = semaphore or asyncio.Semaphore(1)
 
-    for attempt in range(1, settings.max_attempts + 1):
-        page = await browser.new_page(user_agent=settings.user_agent)
-        try:
-            await _stealth.apply_stealth_async(page)
-            logger.debug("Playwright attempt %d/%d: %s", attempt, settings.max_attempts, url)
-            response = await page.goto(
-                url,
-                timeout=settings.playwright_timeout * 1000,
-                wait_until="domcontentloaded",
-            )
-            status_code = response.status if response else 200
-            await page.wait_for_timeout(2500)
-            html = await page.content()
-            logger.debug("Playwright got %d chars (HTTP %d)", len(html), status_code)
-            return html, status_code
-        except Exception as e:
-            last_exc = e
-            if attempt < settings.max_attempts:
-                logger.warning("Playwright attempt %d/%d failed (%s) — retrying",
-                               attempt, settings.max_attempts, type(e).__name__)
-                await asyncio.sleep(settings.retry_delay)
-            else:
-                logger.warning("Playwright failed after %d attempts: %s", settings.max_attempts, e)
-        finally:
-            await page.close()
+    async with _sem:
+        for attempt in range(1, settings.max_attempts + 1):
+            page = await browser.new_page(user_agent=settings.user_agent)
+            try:
+                await _stealth.apply_stealth_async(page)
+                logger.debug("Playwright attempt %d/%d: %s", attempt, settings.max_attempts, url)
+                response = await page.goto(
+                    url,
+                    timeout=settings.playwright_timeout * 1000,
+                    wait_until="domcontentloaded",
+                )
+                status_code = response.status if response else 200
+                await page.wait_for_timeout(2500)
+                html = await page.content()
+                logger.debug("Playwright got %d chars (HTTP %d)", len(html), status_code)
+                return html, status_code
+            except Exception as e:
+                last_exc = e
+                if attempt < settings.max_attempts:
+                    logger.warning("Playwright attempt %d/%d failed (%s) — retrying",
+                                   attempt, settings.max_attempts, type(e).__name__)
+                    await asyncio.sleep(settings.retry_delay)
+                else:
+                    logger.warning("Playwright failed after %d attempts: %s", settings.max_attempts, e)
+            finally:
+                await page.close()
 
     raise FetchError(f"All fetch strategies failed for {url}: {last_exc}") from last_exc
 

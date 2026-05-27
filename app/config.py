@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     retry_delay: float = 2.0
     log_level: str = "INFO"
     executor_max_workers: int = 4
+    playwright_max_concurrent: int = 5
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

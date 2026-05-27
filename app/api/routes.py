@@ -51,6 +51,7 @@ async def crawl(request: Request, body: CrawlRequest):
             resolved_url,
             browser=request.app.state.browser,
             client=http_client,
+            semaphore=request.app.state.playwright_semaphore,
         )
         logger.info("Fetched via %s | HTTP %d | %d chars", fetcher_used, http_status_code, len(html))
     except UnsupportedContentTypeError as e:

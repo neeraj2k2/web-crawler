@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -104,7 +105,8 @@ async def lifespan(app: FastAPI):
         args=["--no-sandbox", "--disable-dev-shm-usage"],
     )
     app.state.playwright = playwright
-    logger.info("Playwright browser ready")
+    app.state.playwright_semaphore = asyncio.Semaphore(settings.playwright_max_concurrent)
+    logger.info("Playwright browser ready (max_concurrent=%d)", settings.playwright_max_concurrent)
 
     yield
 

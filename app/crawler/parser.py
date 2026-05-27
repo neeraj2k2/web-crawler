@@ -71,6 +71,9 @@ def _extract_content(soup: BeautifulSoup, raw_html: str, base_url: str = "", sch
         or bool(soup.find(attrs={"itemprop": "price"}))
     )
 
+    # Extract links before decomposing — nav/footer <a> tags are still valid links.
+    links = _extract_links(soup, base_url)
+
     # Mutate soup directly — _extract_metadata already returned, nothing else holds a ref.
     for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript"]):
         tag.decompose()
@@ -94,7 +97,6 @@ def _extract_content(soup: BeautifulSoup, raw_html: str, base_url: str = "", sch
     # main-content text. Raw body text inflates both with navigation and UI noise.
     # Fall back to raw body text when trafilatura returns nothing.
     content_source = extracted if extracted else body_text
-    links = _extract_links(raw_html, base_url)
 
     return {
         "h1": h1,
@@ -130,15 +132,6 @@ _JUNK_PATH_SUFFIXES = frozenset({
 
 
 def _normalise_link(parsed) -> str | None:
-    """
-    Applies four normalisation steps and returns the clean URL string,
-    or None if the URL should be discarded entirely.
-
-    1. Remove fragment (#section) — fragments are client-side anchors, not pages.
-    2. Strip tracking query parameters (UTM, fbclid, gclid, etc.).
-    3. Filter junk paths (login, cart, logout, etc.).
-    4. Return the normalised URL for deduplication.
-    """
     from urllib.parse import parse_qs, urlencode
 
     # 1. Drop fragment
@@ -162,13 +155,12 @@ def _normalise_link(parsed) -> str | None:
     return url
 
 
-def _extract_links(html: str, base_url: str, max_per_category: int = 50) -> dict:
+def _extract_links(soup: BeautifulSoup, base_url: str, max_per_category: int = 50) -> dict:
     """
-    Extracts links from raw HTML, normalises them, and categorises as
-    internal (same domain) or external. Deduplication happens after
-    normalisation so URLs that differ only in tracking params are collapsed.
+    Extracts links from an already-parsed soup. Caller must invoke this before
+    decomposing structural tags so nav/footer links are included.
+    Normalises and deduplicates — tracking-param variants collapse to one URL.
     """
-    soup = BeautifulSoup(html, "lxml")
     base_domain = urlparse(base_url).netloc.lower().replace("www.", "")
 
     internal, external = [], []
