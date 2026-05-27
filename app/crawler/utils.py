@@ -16,6 +16,7 @@ async def resolve_redirect(url: str, client: httpx.AsyncClient) -> tuple[str, in
     Falls back to (original_url, None) on any error.
     """
     try:
+        client.cookies.clear()
         # Step 1: no-follow to capture the initial status code
         initial = await client.get(url, follow_redirects=False, timeout=5.0)
         initial_status = initial.status_code
@@ -25,7 +26,9 @@ async def resolve_redirect(url: str, client: httpx.AsyncClient) -> tuple[str, in
             logger.info("No redirect for %s (HTTP %d)", url, initial_status)
             return str(initial.url), initial_status
 
-        # Step 2: follow the full chain to get the true final URL
+        # Step 2: follow the full chain to get the true final URL.
+        # Clear again — the no-follow request in step 1 may have set Akamai cookies.
+        client.cookies.clear()
         try:
             final = await client.get(url, follow_redirects=True, timeout=5.0)
             final_url = str(final.url)

@@ -62,6 +62,10 @@ async def _try_static(url: str, client: httpx.AsyncClient) -> tuple[Optional[str
     """
     for attempt in range(1, settings.max_attempts + 1):
         try:
+            # Clear any Akamai cookies accumulated from prior requests (resolve_redirect,
+            # robots.txt check). _abck with ~-1~ signals an unresolved JS challenge —
+            # sending it tells Akamai definitively that we are not a browser.
+            client.cookies.clear()
             logger.info("httpx attempt %d/%d: %s", attempt, settings.max_attempts, url)
             response = await client.get(url)
 
@@ -105,6 +109,8 @@ async def _try_static(url: str, client: httpx.AsyncClient) -> tuple[Optional[str
             else:
                 logger.warning("httpx all %d attempts failed (%s: %s) — falling back to Playwright",
                                settings.max_attempts, type(e).__name__, e)
+                logger.warning("Note: ReadTimeout from a datacenter IP often means the target server "
+                               "uses IP-reputation blocking (Akamai, Cloudflare). Residential proxies required.")
                 return None, None
 
     return None, None
@@ -137,12 +143,18 @@ async def _fetch_playwright(url: str, browser: Browser) -> tuple[str, int]:
             return html, status_code
         except Exception as e:
             last_exc = e
+            err_str = str(e)
             if attempt < settings.max_attempts:
                 logger.warning("Playwright attempt %d/%d failed (%s: %s) — retrying in %.1fs",
-                               attempt, settings.max_attempts, type(e).__name__, e, settings.retry_delay)
+                               attempt, settings.max_attempts, type(e).__name__, err_str, settings.retry_delay)
                 await asyncio.sleep(settings.retry_delay)
             else:
-                logger.warning("Playwright all %d attempts failed", settings.max_attempts)
+                logger.warning("Playwright all %d attempts failed (%s: %s)",
+                               settings.max_attempts, type(e).__name__, err_str)
+                if "ERR_HTTP2_PROTOCOL_ERROR" in err_str or "ERR_CONNECTION_REFUSED" in err_str:
+                    logger.warning("ERR_HTTP2_PROTOCOL_ERROR often means the server is closing the "
+                                   "connection at the TLS level — typically IP-reputation blocking on "
+                                   "datacenter IPs. Not fixable via headers alone.")
         finally:
             await page.close()
             logger.info("Playwright page closed (attempt %d)", attempt)

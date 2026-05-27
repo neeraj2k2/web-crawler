@@ -5,9 +5,9 @@ class Settings(BaseSettings):
     static_timeout: int = 10
     playwright_timeout: int = 30
     user_agent: str = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/136.0.0.0 Safari/537.36"
+        "Chrome/148.0.0.0 Safari/537.36"
     )
     keybert_model: str = "all-MiniLM-L6-v2"
     topics_top_k: int = 10

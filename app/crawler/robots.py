@@ -24,6 +24,7 @@ async def is_allowed(url: str, client: httpx.AsyncClient) -> bool:
     rp.set_url(robots_url)
 
     try:
+        client.cookies.clear()
         response = await client.get(robots_url, timeout=5.0)
         if response.status_code == 200:
             rp.parse(response.text.splitlines())

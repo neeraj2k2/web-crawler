@@ -36,25 +36,56 @@ logger = logging.getLogger("app.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=3.0) as _c:
+            _ip = (await _c.get("https://api.ipify.org")).text.strip()
+        logger.info("Outbound IP: %s (datacenter IPs are blocked by Akamai/Cloudflare)", _ip)
+    except Exception:
+        logger.info("Outbound IP: could not determine")
+
+    async def _log_request(request: httpx.Request) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        logger.debug("── Outgoing Request ──────────────────────────")
+        logger.debug("  %s %s", request.method, request.url)
+        for k, v in request.headers.items():
+            logger.debug("    %s: %s", k, v)
+        logger.debug("─────────────────────────────────────────────")
+
+    async def _log_response(response: httpx.Response) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        logger.debug("── Incoming Response ─────────────────────────")
+        logger.debug("  Status : %s | URL : %s", response.status_code, response.url)
+        for k, v in response.headers.items():
+            logger.debug("    %s: %s", k, v)
+        logger.debug("─────────────────────────────────────────────")
+
     logger.info("Creating shared httpx client")
     app.state.http_client = httpx.AsyncClient(
         timeout=settings.static_timeout,
         follow_redirects=True,
         http2=False,
+        cookies=None,  # disable cookie jar — Akamai's _abck cookie carries a
+                       # JS-challenge-pending flag (~-1~) that we can never resolve;
+                       # carrying it on subsequent requests signals we're not a browser
+        event_hooks={"request": [_log_request], "response": [_log_response]},
         headers={
             "User-Agent": settings.user_agent,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1",
+            "Priority": "u=0, i",
             "Sec-Fetch-Site": "none",
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-User": "?1",
             "Sec-Fetch-Dest": "document",
-            "sec-ch-ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+            "sec-ch-ua": '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
             "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
+            "sec-ch-ua-platform": '"macOS"',
         },
     )
     logger.info("httpx client ready (connection pooling + TLS session reuse enabled)")

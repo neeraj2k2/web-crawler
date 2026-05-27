@@ -26,6 +26,11 @@ async def crawl(request: Request, body: CrawlRequest):
     # Resolve redirect once — passed downstream to both robots and fetcher
     # so neither makes a redundant redirect-check request.
     http_client = request.app.state.http_client
+    # Clear any cookies accumulated from previous requests — Akamai's _abck cookie
+    # carries a JS-challenge-pending flag (~-1~) that we can never resolve. Sending
+    # it on subsequent requests tells Akamai definitively that we are not a browser.
+    http_client.cookies.clear()
+
     resolved_url, redirect_status = await resolve_redirect(url, http_client)
     if resolved_url != url:
         logger.info("Resolved URL: %s (initial HTTP %s)", resolved_url, redirect_status)

@@ -3,7 +3,6 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 
-import spacy
 from bs4 import BeautifulSoup  # used in classify_page_type type hint
 from keybert import KeyBERT
 
@@ -12,7 +11,6 @@ logger = logging.getLogger("app.crawler.classifier")
 
 def extract_topics(
     model: KeyBERT,
-    nlp: spacy.language.Language,
     metadata: dict,
     content: dict,
     extracted_text: Optional[str],
