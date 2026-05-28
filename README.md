@@ -84,6 +84,5 @@ See `docs/part1-plan.md` for full architecture decisions, technology choices, an
 ## AI Tools Used
 
 **Tool:** Claude Code (Anthropic) — `claude-sonnet-4-6`
-
-Used throughout the development lifecycle — planning and architecture decisions, implementation of core modules, debugging, and writing the test suite.
+Used throughout the development lifecycle
 
